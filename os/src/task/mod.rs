@@ -153,6 +153,20 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    /// Inc the syscall count of `trace_idx`
+    pub fn inc_current_task_syscall_cnt(&self, trace_idx: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_cnt[trace_idx] += 1;
+    }
+
+    /// Get the syscall count of `trace_idx`
+    pub fn get_current_task_syscall_cnt(&self, trace_idx: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_cnt[trace_idx]
+    }
 }
 
 /// Run the first task in task list.

@@ -31,8 +31,37 @@ mod process;
 use fs::*;
 use process::*;
 
+/// The number of syscalls
+pub const SYSCALL_COUNT: usize = 8;
+
+/// The id of syscalls
+const SYSCALL_IDS: [usize; SYSCALL_COUNT] = [
+    SYSCALL_WRITE,
+    SYSCALL_EXIT,
+    SYSCALL_YIELD,
+    SYSCALL_GET_TIME,
+    SYSCALL_TRACE,
+    SYSCALL_MMAP,
+    SYSCALL_MUNMAP,
+    SYSCALL_SBRK,
+];
+
+use crate::task::TASK_MANAGER;
+
+/// Turn the `syscall_id` into `trace_idx`
+pub fn syscall_trace_idx(syscall_id: usize) -> usize {
+    SYSCALL_IDS
+        .iter()
+        .enumerate()
+        .find(|(_, id)| **id == syscall_id)
+        .map(|(idx, _)| idx)
+        .unwrap_or_else(|| panic!("Unsupported syscall_id: {}", syscall_id))
+}
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    let trace_idx = syscall_trace_idx(syscall_id);
+    TASK_MANAGER.inc_current_task_syscall_cnt(trace_idx);
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
