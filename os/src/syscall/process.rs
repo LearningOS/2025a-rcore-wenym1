@@ -1,15 +1,13 @@
 //! Process management syscalls
 
 use crate::config::PAGE_SIZE;
-use crate::mm::{frame_alloc, PTEFlags, PageTable, PageTableEntry, VirtAddr, VirtPageNum};
+use crate::mm::{MapPermission, PageTable, PageTableEntry, VirtAddr};
 use crate::syscall::syscall_trace_idx;
 use crate::task::{
     change_program_brk, current_user_token, exit_current_and_run_next,
     suspend_current_and_run_next, TASK_MANAGER,
 };
 use crate::timer::get_time_us;
-use alloc::vec;
-use alloc::vec::Vec;
 use core::mem::size_of;
 use core::ptr::addr_of_mut;
 
@@ -83,7 +81,7 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
             } else {
                 -1
             }
-        },
+        }
         1 => {
             let Some(addr) = VirtAddr::try_from(id) else {
                 return -1;
@@ -98,25 +96,13 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
             } else {
                 -1
             }
-        },
+        }
         2 => {
             let trace_idx = syscall_trace_idx(id);
-            TASK_MANAGER.get_current_task_syscall_cnt(trace_idx) as _
+            TASK_MANAGER.on_current_task(|task| task.syscall_cnt[trace_idx]) as _
         }
         _ => -1,
     }
-}
-
-fn get_pages(start: usize, len: usize) -> Vec<VirtPageNum> {
-    let mut pages = vec![];
-    let start_addr = VirtAddr::from(start);
-    let end = start + len;
-    let mut page_num = start_addr.floor();
-    while VirtAddr::from(page_num).0 < end {
-        pages.push(page_num);
-        page_num.0 += 1;
-    }
-    pages
 }
 
 /// sys_mmap
@@ -128,36 +114,51 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     if start % PAGE_SIZE != 0 {
         return -1;
     }
-    let pages = get_pages(start, len);
-    let mut page_table = PageTable::from_token(current_user_token());
-    for page_num in &pages {
-        if let Some(pte) = page_table.translate(*page_num)
-            && pte.is_valid()
-        {
-            return -1;
+    let start_addr = VirtAddr::from(start);
+    let end = start + len;
+    {
+        let page_table = PageTable::from_token(current_user_token());
+        let mut page_num = start_addr.floor();
+        while VirtAddr::from(page_num).0 < end {
+            if let Some(pte) = page_table.translate(page_num)
+                && pte.is_valid()
+            {
+                return -1;
+            }
+            page_num.0 += 1;
         }
     }
-    let mut pte_flag = PTEFlags::empty();
-    pte_flag.set(PTEFlags::U, true);
+    let end_addr = VirtAddr::from(end);
+    let mut permission = MapPermission::empty();
+    permission.set(MapPermission::U, true);
     if prot & 0x1 != 0 {
-        pte_flag.set(PTEFlags::R, true);
+        permission.set(MapPermission::R, true);
     }
     if prot & 0x2 != 0 {
-        pte_flag.set(PTEFlags::W, true);
+        permission.set(MapPermission::W, true);
     }
     if prot & 0x4 != 0 {
-        pte_flag.set(PTEFlags::X, true);
+        permission.set(MapPermission::X, true);
     }
-    for i in 0..pages.len() {
-        let Some(page) = frame_alloc() else {
-            for i in 0..i {
-                page_table.unmap(pages[i]);
-            }
-            return -1;
-        };
-        let page_num = pages[i];
-        page_table.map(page_num, page.ppn, pte_flag);
-    }
+    TASK_MANAGER.on_current_task(|task| {
+        task.memory_set
+            .insert_framed_area(start_addr, end_addr, permission);
+    });
+    // for i in 0..pages.len() {
+    //     let Some(page) = frame_alloc() else {
+    //         for i in 0..i {
+    //             page_table.unmap(pages[i]);
+    //         }
+    //         return -1;
+    //     };
+    //     let page_num = pages[i];
+    //     println!("map {:?} {:?}", page_num, pte_flag);
+    //     page_table.map(page_num, page.ppn, pte_flag);
+    //     println!("check flags: {:?}", page_table.translate(page_num).unwrap().flags());
+    //     println!("check flags: {:?}", page_table.translate(VirtAddr::from(0x10000000).floor()).unwrap().flags());
+    //     println!("check flags: {:?}", page_table.translate(VirtAddr::from(0x10001000).floor()).unwrap().flags());
+    //     println!("check flags: {:?}", page_table.translate(VirtAddr::from(0x10002000).floor()).unwrap().flags());
+    // }
     0
 }
 
@@ -167,20 +168,13 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
     if start % PAGE_SIZE != 0 {
         return -1;
     }
-    let pages = get_pages(start, len);
-    let mut page_table = PageTable::from_token(current_user_token());
-    for page in &pages {
-        if let Some(pte) = page_table.translate(*page)
-            && pte.is_valid()
-        {
-        } else {
-            return -1;
-        }
+    let start_va = VirtAddr::from(start);
+    let end_va = VirtAddr::from(start + len);
+    if TASK_MANAGER.on_current_task(|task| task.memory_set.remove_frame_area(start_va, end_va)) {
+        0
+    } else {
+        -1
     }
-    for page in pages {
-        page_table.unmap(page);
-    }
-    0
 }
 
 /// change data segment size

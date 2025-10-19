@@ -154,18 +154,11 @@ impl TaskManager {
         }
     }
 
-    /// Inc the syscall count of `trace_idx`
-    pub fn inc_current_task_syscall_cnt(&self, trace_idx: usize) {
+    /// On current task
+    pub fn on_current_task<T>(&self, on_task: impl FnOnce(&mut TaskControlBlock) -> T) -> T {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
-        inner.tasks[current].syscall_cnt[trace_idx] += 1;
-    }
-
-    /// Get the syscall count of `trace_idx`
-    pub fn get_current_task_syscall_cnt(&self, trace_idx: usize) -> usize {
-        let inner = self.inner.exclusive_access();
-        let current = inner.current_task;
-        inner.tasks[current].syscall_cnt[trace_idx]
+        on_task(&mut inner.tasks[current])
     }
 }
 
