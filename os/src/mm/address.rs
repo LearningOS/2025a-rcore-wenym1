@@ -58,11 +58,27 @@ impl From<usize> for PhysPageNum {
         Self(v & ((1 << PPN_WIDTH_SV39) - 1))
     }
 }
+
+impl VirtAddr {
+    /// Try create a virtual address from usize
+    pub fn try_from(v: usize) -> Option<Self> {
+        if v < (1 << VA_WIDTH_SV39) {
+            Some(Self(v & ((1 << VA_WIDTH_SV39) - 1)))
+        } else {
+            None
+        }
+    }
+}
+
 impl From<usize> for VirtAddr {
     fn from(v: usize) -> Self {
+        if v > (1 << VA_WIDTH_SV39) {
+            println!("large VirtualAddr {}", v);
+        }
         Self(v & ((1 << VA_WIDTH_SV39) - 1))
     }
 }
+
 impl From<usize> for VirtPageNum {
     fn from(v: usize) -> Self {
         Self(v & ((1 << VPN_WIDTH_SV39) - 1))
