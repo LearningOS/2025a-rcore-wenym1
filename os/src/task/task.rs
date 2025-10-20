@@ -92,6 +92,10 @@ impl TaskControlBlock {
     ///
     /// At present, it is only used for the creation of initproc
     pub fn new(elf_data: &[u8]) -> Self {
+        Self::new_inner(elf_data, None)
+    }
+
+    fn new_inner(elf_data: &[u8], parent: Option<Weak<Self>>) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
         let trap_cx_ppn = memory_set
@@ -113,7 +117,7 @@ impl TaskControlBlock {
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,
-                    parent: None,
+                    parent,
                     children: Vec::new(),
                     exit_code: 0,
                     heap_bottom: user_sp,
@@ -204,6 +208,16 @@ impl TaskControlBlock {
         task_control_block
         // **** release child PCB
         // ---- release parent PCB
+    }
+
+    /// spawn a task from `elf_data`
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        let task_control_block = Arc::new(Self::new_inner(elf_data, Some(Arc::downgrade(self))));
+        self.inner
+            .exclusive_access()
+            .children
+            .push(task_control_block.clone());
+        task_control_block
     }
 
     /// get pid of process
