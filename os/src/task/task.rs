@@ -71,6 +71,12 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Current stride
+    pub stride: usize,
+
+    /// Current pass
+    pub pass: usize,
 }
 
 impl TaskControlBlockInner {
@@ -97,6 +103,11 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
+    /// Get pass from prio
+    pub fn get_pass(prio: usize) -> usize {
+        0x100000 / prio
+    }
+
     /// Create a new process
     ///
     /// At present, it is only used for the creation of initproc
@@ -139,6 +150,8 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    pass: Self::get_pass(16),
                 })
             },
         };
@@ -220,6 +233,8 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: 0,
+                    pass: Self::get_pass(16),
                 })
             },
         });

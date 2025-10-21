@@ -1,6 +1,7 @@
 //! Process management syscalls
 use crate::config::PAGE_SIZE;
 use crate::mm::{MapPermission, MemorySet, PageTableEntry, VirtAddr};
+use crate::task::TaskControlBlock;
 use crate::timer::get_time_us;
 use crate::{
     fs::{open_file, OpenFlags},
@@ -236,10 +237,16 @@ pub fn sys_spawn(path: *const u8) -> isize {
 }
 
 // YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio < 2 {
+        -1
+    } else {
+        current_task().unwrap().inner_exclusive_access().pass =
+            TaskControlBlock::get_pass(prio as _);
+        prio
+    }
 }
