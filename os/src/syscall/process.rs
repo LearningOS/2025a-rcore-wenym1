@@ -1,6 +1,6 @@
 //! Process management syscalls
 use crate::config::PAGE_SIZE;
-use crate::mm::{MapPermission, MemorySet, PageTableEntry, VirtAddr};
+use crate::mm::{set_value, MapPermission, VirtAddr};
 use crate::task::TaskControlBlock;
 use crate::timer::get_time_us;
 use crate::{
@@ -12,8 +12,6 @@ use crate::{
     },
 };
 use alloc::sync::Arc;
-use core::mem::size_of;
-use core::ptr::addr_of_mut;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -106,10 +104,6 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     // ---- release current PCB automatically
 }
 
-fn translate_user_ptr(addr: VirtAddr, entry: PageTableEntry) -> &'static mut u8 {
-    &mut entry.ppn().get_bytes_array()[addr.page_offset()]
-}
-
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
@@ -117,23 +111,10 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel:pid[{}]", current_task().unwrap().pid.0);
     let us = get_time_us();
     let task = current_task().unwrap();
-    fn set_usize(memory_set: &MemorySet, ptr: *mut usize, value: usize) {
-        let target_ptr = ptr as *mut u8;
-        let value_ptr = &value as *const usize as *const [u8; size_of::<usize>()];
-        unsafe {
-            for i in 0..size_of::<usize>() {
-                let target_addr = VirtAddr::from(target_ptr.add(i) as *const u8 as usize);
-                *translate_user_ptr(
-                    target_addr,
-                    memory_set.translate(target_addr.floor()).unwrap(),
-                ) = (*value_ptr)[i];
-            }
-        }
-    }
     let task = task.inner_exclusive_access();
     unsafe {
-        set_usize(&task.memory_set, addr_of_mut!((*ts).sec), us / 1_000_000);
-        set_usize(&task.memory_set, addr_of_mut!((*ts).usec), us % 1_000_000);
+        set_value(&task.memory_set, &mut (*ts).sec, us / 1_000_000);
+        set_value(&task.memory_set, &mut (*ts).usec, us % 1_000_000);
     }
     0
 }
